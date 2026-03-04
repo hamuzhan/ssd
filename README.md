@@ -15,7 +15,11 @@
 
 **SSD is a new LLM inference algorithm. It is exact, and it is extremely fast.**
 
-This custom inference engine supports: 
+SSD is a new type of speculative decoding (SD). In normal SD, a small and fast model guesses the next few tokens that a larger slower model may generate, and the large model then verifies them in one forward pass: drafting and verification happen one after the other on the same hardware.
+
+In SSD, they happen in parallel, on distinct hardware. The small model anticipates likely verification outcomes in advance, and speculates for all of them at once. If it guessed correctly, the speculation can be returned immediately so drafting overhead is eliminated entirely.
+
+This custom inference engine supports:
 - A reference implementation of the SSD algorithm
 - Optimized SD and autoregressive baselines
 - Qwen3 + Llama3 model families
