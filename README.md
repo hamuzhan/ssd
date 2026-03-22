@@ -26,12 +26,6 @@ This custom inference engine supports:
 - Tensor Parallelism
 - PagedAttention, CUDAgraphs, torch compilation, prefix caching
 
-<div align="center">
-  <table><tr><td width="800">
-    <video src="https://github.com/user-attachments/assets/588eaa70-d6e5-4522-9e94-e54fc6074aba" />
-  </td></tr></table>
-</div>
-
 ## Setup
 
 Requirements: Python 3.11+, CUDA >= 12.8. This code was written and tested on H100s. 
