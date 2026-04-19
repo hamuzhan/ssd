@@ -12,19 +12,24 @@ readme = "README.md"
 description = "Async tree-based speculative decoding research engine"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "torch>=2.8,<3",
-    "triton>=3.4,<4",
+    # Lower bounds target the CUDA-13 stack (cu130 wheels at pytorch.org/whl/cu130,
+    # see [tool.uv] below). The original pin set (torch 2.8 / triton 3.4 / flashinfer
+    # 0.5.2 / sgl-kernel 0.3.17) still satisfies these on CUDA 12.8 wheels.
+    "torch>=2.9,<3",
+    "triton>=3.5,<4",
     "transformers==4.57.1",
     "xxhash==3.5.0",
     "numpy>=2.1,<3",
     "safetensors>=0.6,<1",
     "tqdm==4.67.1",
-    "flashinfer-python>=0.5,<1",
-    # sgl-kernel's flash_attn fork isn't required — we call upstream `flash_attn`
-    # directly (both paths now use `block_table` kwarg). Keep the dep only if you
-    # need other sgl-kernel ops; remove if building a minimal install.
+    "flashinfer-python>=0.6.8,<1",
+    # Attention layer was ported off sgl-kernel's flash_attn fork to upstream
+    # Dao-AILab flash_attn (see ssd/layers/attention.py). The pinned sgl-kernel
+    # cu130 wheel at docs.sglang.ai/whl/cu130 expects the torch 2.8 ABI and fails
+    # to link against any torch available on the cu130 index — removing sgl-kernel
+    # as a hard dep. Users who want sgl-kernel's other ops can add it themselves.
     "flash-attn>=2.7,<3",
-    "nvidia-cutlass-dsl>=4.2",
+    "nvidia-cutlass-dsl>=4.3",
     "wandb>=0.22",
     "hf_transfer",
     "tiktoken",
@@ -47,3 +52,15 @@ Homepage="https://github.com/tanishqkumar/ssd"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ssd*"]
+
+# CUDA 13 wheel indexes. uv will resolve torch/triton from pytorch-cu130 and fall
+# back to PyPI for everything else. Change to /whl/cu128 (or drop [tool.uv.sources]
+# entirely) if you're on CUDA 12.8.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+triton = { index = "pytorch-cu130" }

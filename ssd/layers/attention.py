@@ -111,20 +111,15 @@ class Attention(nn.Module):
             if verify_or_glue:
                 assert context.context_lens is not None
                 # Multi-query paged attention: upstream flash_attn_varlen_func
-                # with block_table=... handles this exactly. Derive cu_seqlens_k
-                # from context_lens (per-seq KV length) since verify's
-                # prepare_decode leaves cu_seqlens_k=None on purpose.
-                ctx_lens32 = context.context_lens.to(torch.int32)
-                cu_seqlens_k = torch.nn.functional.pad(
-                    ctx_lens32.cumsum(0, dtype=torch.int32), (1, 0)
-                )
-                max_seqlen_k = int(ctx_lens32.max().item())
+                # with block_table=... handles this exactly. cu_seqlens_k /
+                # max_seqlen_k are pre-computed in prepare_decode so this call
+                # is CUDA-graph capture safe (no .item() inside the graph).
                 o = flash_attn_varlen_func(
                     q, k_cache, v_cache,
                     cu_seqlens_q=context.cu_seqlens_q,
-                    cu_seqlens_k=cu_seqlens_k,
+                    cu_seqlens_k=context.cu_seqlens_k,
                     max_seqlen_q=context.max_seqlen_q,
-                    max_seqlen_k=max_seqlen_k,
+                    max_seqlen_k=context.max_seqlen_k,
                     softmax_scale=self.scale, causal=True,
                     block_table=context.block_tables,
                 )

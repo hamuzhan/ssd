@@ -523,15 +523,22 @@ class ModelRunner:
         
         block_tables = prepare_block_tables_from_seqs(seqs, self.is_draft) # if verify, set cu_seqlens_q as well
 
-        if verify: ### what path does glue decode take? trace it. 
+        if verify: ### what path does glue decode take? trace it.
             # this had [not draft and draft_async] condn before
             cu_seqlens_q = torch.zeros(len(seqs) + 1, dtype=torch.int32, device=self.device)
             seqlen_q = torch.full((len(seqs),), self.config.speculate_k + 1, dtype=torch.int32, device=self.device)
             cu_seqlens_q[1:] = torch.cumsum(seqlen_q, dim=0)
-            set_context(is_prefill=False, cu_seqlens_q=cu_seqlens_q, cu_seqlens_k=None, 
-                       max_seqlen_q=self.config.speculate_k + 1, max_seqlen_k=0,
-                       slot_mapping=slot_mapping, context_lens=context_lens, 
-                       block_tables=block_tables) 
+            # Pre-compute max_seqlen_k here (outside any CUDA-graph capture block)
+            # so attention.py's verify path can consume it as a plain int without
+            # a device→host sync inside the captured forward.
+            max_seqlen_k = int(context_lens.max().item())
+            # Cumulative kv seqlens for flash_attn_varlen_func's block_table path.
+            cu_seqlens_k = torch.zeros(len(seqs) + 1, dtype=torch.int32, device=self.device)
+            cu_seqlens_k[1:] = torch.cumsum(context_lens.to(torch.int32), dim=0)
+            set_context(is_prefill=False, cu_seqlens_q=cu_seqlens_q, cu_seqlens_k=cu_seqlens_k,
+                       max_seqlen_q=self.config.speculate_k + 1, max_seqlen_k=max_seqlen_k,
+                       slot_mapping=slot_mapping, context_lens=context_lens,
+                       block_tables=block_tables)
         else: # sq_decode path, draft (sync spec) or target (normal)
             set_context(is_prefill=False, cu_seqlens_q=None, cu_seqlens_k=None, 
                        max_seqlen_q=0, max_seqlen_k=0, slot_mapping=slot_mapping, 

@@ -1,7 +1,8 @@
 import os
 
 # cuda arch for flashinfer kernel compilation. set this to match your gpu:
-# "9.0" for H100/H200, "8.0" for A100, "8.9" for L40/4090, etc.
+# "9.0" for H100/H200/GH200, "10.0" for B200, "12.0" for GB200,
+# "8.0" for A100, "8.9" for L40/4090, etc.
 CUDA_ARCH = os.environ.get("SSD_CUDA_ARCH", "9.0")
 os.environ.setdefault("TORCH_CUDA_ARCH_LIST", CUDA_ARCH)
 

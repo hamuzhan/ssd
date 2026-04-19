@@ -55,6 +55,11 @@ def run_verify_cudagraph(model_runner, input_ids, positions, last_only, graph_va
     cu = graph_vars["cu_seqlens_q"][:bs + 1]
     cu.zero_()
     cu[1:].copy_(torch.cumsum(seqlen_q, 0))
+    # Populate cu_seqlens_k from actual per-seq kv lengths (padding rows reuse
+    # the last real row, so context_lens here already has the padded values).
+    cu_k = graph_vars["cu_seqlens_k"][:bs + 1]
+    cu_k.zero_()
+    cu_k[1:].copy_(torch.cumsum(context_lens.to(torch.int32), 0))
 
     if block_tables is not None:
         graph_vars["block_tables"][:bs, :block_tables.size(1)] = block_tables
@@ -555,6 +560,9 @@ def capture_verify_cudagraph(model_runner):
         max_bs, model_runner.max_num_blocks, dtype=torch.int32)
     outputs = torch.zeros(max_bs * k_plus_1, hf_config.hidden_size)
     cu_seqlens_q = torch.zeros(max_bs + 1, dtype=torch.int32)
+    # cu_seqlens_k is consumed by flash_attn_varlen_func in the ported verify
+    # attention path. Allocated here so replay can update its contents per step.
+    cu_seqlens_k = torch.zeros(max_bs + 1, dtype=torch.int32)
 
     # Eagle target: also capture eagle_acts from model forward
     eagle_acts = None
@@ -582,6 +590,16 @@ def capture_verify_cudagraph(model_runner):
         cu.zero_()
         cu[1:].copy_(torch.cumsum(seqlen_q, 0))
         context_lens[:bs] = seqlen_q
+        # Initialize cu_seqlens_k to a valid monotone sequence (same as seqlen_q
+        # cumulative, matching context_lens[:bs]) so warmup produces a sane
+        # attention pattern. Runtime will overwrite this buffer per call.
+        cu_k = cu_seqlens_k[:bs + 1]
+        cu_k.zero_()
+        cu_k[1:].copy_(torch.cumsum(context_lens[:bs], 0))
+        # max_seqlen_k is a python int baked into the graph at capture — use
+        # max_model_len as a safe upper bound so future larger runtime values
+        # fit within the captured launch configuration.
+        max_seqlen_k_captured = int(model_runner.config.max_model_len)
 
         set_context(
             is_prefill=False,
@@ -589,7 +607,9 @@ def capture_verify_cudagraph(model_runner):
             context_lens=context_lens[:bs],
             block_tables=block_tables[:bs],
             cu_seqlens_q=cu,
+            cu_seqlens_k=cu_k,
             max_seqlen_q=k_plus_1,
+            max_seqlen_k=max_seqlen_k_captured,
         )
 
         # warmup
@@ -625,6 +645,7 @@ def capture_verify_cudagraph(model_runner):
         context_lens=context_lens,
         block_tables=block_tables,
         cu_seqlens_q=cu_seqlens_q,
+        cu_seqlens_k=cu_seqlens_k,
         outputs=outputs,
     )
     if eagle_acts is not None:
