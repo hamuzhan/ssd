@@ -13,7 +13,9 @@ class RMSHeadNorm(nn.Module):
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(hidden_size))
 
-    @torch.compile
+    # torch.compile disabled: upstream dynamo regression on torch 2.11+ trips on
+    # `x.float()` inside compiled regions. Eager fallback is functionally equivalent
+    # (just loses kernel fusion).
     def rms_forward(
         self,
         x: torch.Tensor,
@@ -25,7 +27,9 @@ class RMSHeadNorm(nn.Module):
         x = x.to(orig_dtype).mul_(self.weight)
         return x
 
-    @torch.compile
+    # torch.compile disabled: upstream dynamo regression on torch 2.11+ trips on
+    # `x.float()` inside compiled regions. Eager fallback is functionally equivalent
+    # (just loses kernel fusion).
     def add_rms_forward(
         self,
         x: torch.Tensor,
@@ -61,7 +65,9 @@ class RMSDNorm(nn.Module): # different method so torch compile can have one spec
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(hidden_size))
 
-    @torch.compile
+    # torch.compile disabled: upstream dynamo regression on torch 2.11+ trips on
+    # `x.float()` inside compiled regions. Eager fallback is functionally equivalent
+    # (just loses kernel fusion).
     def norm_forward(
         self,
         x: torch.Tensor,
@@ -73,7 +79,9 @@ class RMSDNorm(nn.Module): # different method so torch compile can have one spec
         x = x.to(orig_dtype).mul_(self.weight)
         return x
 
-    @torch.compile
+    # torch.compile disabled: upstream dynamo regression on torch 2.11+ trips on
+    # `x.float()` inside compiled regions. Eager fallback is functionally equivalent
+    # (just loses kernel fusion).
     def add_norm_forward(
         self,
         x: torch.Tensor,

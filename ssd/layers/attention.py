@@ -3,7 +3,13 @@ from torch import nn
 import triton
 import triton.language as tl
 
-from sgl_kernel.flash_attn import flash_attn_varlen_func, flash_attn_with_kvcache
+# Upstream flash_attn (Dao-AILab) supports both the varlen-with-block_table path
+# used for prefill + verify/glue, and the single-query kvcache path for decode.
+# The pre-pinned sgl-kernel fork exported the same functions under the same
+# names but renamed the paged-KV kwarg to `page_table`; upstream keeps the
+# original `block_table`. This module abstracts that rename and uses the
+# varlen-with-block_table call for multi-query verify, so no SGLang fork needed.
+from flash_attn import flash_attn_varlen_func, flash_attn_with_kvcache
 from ssd.utils.context import get_context
 
 
@@ -104,11 +110,24 @@ class Attention(nn.Module):
 
             if verify_or_glue:
                 assert context.context_lens is not None
-                o = flash_attn_with_kvcache(q, k_cache, v_cache,
-                                        cache_seqlens=context.context_lens, page_table=context.block_tables,
-                                        softmax_scale=self.scale, causal=True,
-                                        cu_seqlens_q=context.cu_seqlens_q, max_seqlen_q=context.max_seqlen_q,
-                                        )
+                # Multi-query paged attention: upstream flash_attn_varlen_func
+                # with block_table=... handles this exactly. Derive cu_seqlens_k
+                # from context_lens (per-seq KV length) since verify's
+                # prepare_decode leaves cu_seqlens_k=None on purpose.
+                ctx_lens32 = context.context_lens.to(torch.int32)
+                cu_seqlens_k = torch.nn.functional.pad(
+                    ctx_lens32.cumsum(0, dtype=torch.int32), (1, 0)
+                )
+                max_seqlen_k = int(ctx_lens32.max().item())
+                o = flash_attn_varlen_func(
+                    q, k_cache, v_cache,
+                    cu_seqlens_q=context.cu_seqlens_q,
+                    cu_seqlens_k=cu_seqlens_k,
+                    max_seqlen_q=context.max_seqlen_q,
+                    max_seqlen_k=max_seqlen_k,
+                    softmax_scale=self.scale, causal=True,
+                    block_table=context.block_tables,
+                )
 
             elif tree_decode:
                 if self.only_prefill_wrapper is not None:
@@ -126,7 +145,7 @@ class Attention(nn.Module):
             else: # single query decode
                 q = q.unsqueeze(1)
                 o = flash_attn_with_kvcache(q, k_cache, v_cache,
-                                            cache_seqlens=context.context_lens, page_table=context.block_tables,
+                                            cache_seqlens=context.context_lens, block_table=context.block_tables,
                                             softmax_scale=self.scale, causal=True,
                                             )
 
