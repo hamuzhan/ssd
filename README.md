@@ -118,11 +118,42 @@ python -O chat.py --sglang --ar   # autoregressive
 python -O chat.py --vllm          # spec decode
 ```
 
+### Serve
+
+An OpenAI-compatible HTTP server ships in `ssd.server`. It exposes
+`/v1/completions`, `/v1/chat/completions`, `/v1/models`, and `/health`, with
+SSE streaming, continuous batching, and client-side cancellation.
+
+```bash
+uv sync --extra server
+
+# AR — single GPU
+python -O -m ssd.server --model $LLAMA_8B --port 40030
+
+# Async SSD — 4-GPU target + 1-GPU draft
+python -O -m ssd.server --model $LLAMA_70B --draft $LLAMA_1B \
+    --tensor-parallel-size 4 --speculate --draft-async \
+    --speculate-k 7 --async-fan-out 3 --max-num-seqs 8 --port 40030
+```
+
+Any OpenAI client works:
+
+```bash
+curl -N http://localhost:40030/v1/chat/completions \
+    -H 'content-type: application/json' \
+    -d '{"model":"ssd","messages":[{"role":"user","content":"hi"}],"stream":true}'
+```
+
+The bundled chat client also accepts a URL:
+
+```bash
+python -O bench/chat.py --vllm --url http://localhost:40030
+```
+
 ### Roadmap
 
 Features that will be supported in the near future: 
 - Draft data parallel (increase speculation cache size) on up to 4 devices to avoid getting compute bound
-- OpenAI-compatible inference over HTTP
 - New models and MoE support: GPT-OSS and Kimi-K2.5.
 
 Contributions welcome! 

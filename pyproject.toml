@@ -32,6 +32,11 @@ scripts = [
     "datasets",
     "huggingface_hub",
 ]
+server = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2",
+]
 
 [project.urls]
 Homepage="https://github.com/tanishqkumar/ssd"

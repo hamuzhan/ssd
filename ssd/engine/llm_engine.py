@@ -183,11 +183,32 @@ class LLMEngine:
         if hard:
             os._exit(0)
 
-    def add_request(self, prompt: str | list[int], sampling_params: SamplingParams):
+    def add_request(self, prompt: str | list[int], sampling_params: SamplingParams) -> Sequence:
         if isinstance(prompt, str):
             prompt = self.tokenizer.encode(prompt)
         seq = Sequence(prompt, sampling_params)
         self.scheduler.add(seq)
+        return seq
+
+    def abort(self, seq_id: int) -> bool:
+        sched = self.scheduler
+        for dq in (sched.waiting, sched.running):
+            for seq in list(dq):
+                if seq.seq_id == seq_id:
+                    dq.remove(seq)
+                    try:
+                        sched.block_manager.deallocate(seq)
+                    except Exception:
+                        pass
+                    if self.config.speculate:
+                        try:
+                            sched.draft_block_manager.deallocate(seq)
+                        except Exception:
+                            pass
+                    from ssd.engine.sequence import SequenceStatus
+                    seq.status = SequenceStatus.FINISHED
+                    return True
+        return False
 
 
     def step(self, step: InferenceStep):
